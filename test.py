@@ -1,3 +1,4 @@
+import csv
 import os
 import random
 
@@ -31,6 +32,7 @@ STUDENT_QAT_CHECKPOINT = "student_qat.pth"
 STUDENT_QUANTIZED_CHECKPOINT = "student_quantized.pth"
 USE_QUANTIZED_EVAL = True
 CALIBRATION_BATCHES = 10
+NOISE_RESULTS_CSV = "noise_inference_results.csv"
 
 
 def set_args_defaults():
@@ -159,6 +161,14 @@ def build_quantized_model(model_qat, loader, device):
         inputs = torch.flatten(inputs, start_dim=1).to(device)
         model_quantized(inputs)
     return model_quantized
+
+
+def save_noise_results_csv(noise_levels, accuracies, output_path):
+    with open(output_path, mode="w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["max_noise", "accuracy"])
+        for noise_level, accuracy in zip(noise_levels, accuracies):
+            writer.writerow([f"{noise_level:.1f}", f"{accuracy:.6f}"])
 
 
 def main():
@@ -304,6 +314,9 @@ def main():
         acc = evaluate_student_with_noise(eval_model, testset, device, max_noise, runs=10)
         noise_accs.append(acc)
         print(f"Test Noise Max {max_noise:.1f} - Acc: {acc:.4f}")
+
+    save_noise_results_csv(noise_levels, noise_accs, NOISE_RESULTS_CSV)
+    print(f"Saved noise inference results to {NOISE_RESULTS_CSV}")
 
     plt.figure(figsize=(8, 5))
     plt.plot(noise_levels, noise_accs, marker="o")
