@@ -211,27 +211,44 @@ def main():
     student_model.qconfig = get_default_qat_qconfig_per_tensor()
     model_qat = prepare_qat(student_model)
 
+    loaded_student = False
     if USE_QUANTIZED_EVAL and os.path.exists(STUDENT_QUANTIZED_CHECKPOINT):
         model_quantized = convert(model_qat, inplace=False)
-        model_quantized.load_state_dict(
-            torch.load(STUDENT_QUANTIZED_CHECKPOINT, map_location=map_location)
-        )
-        model_quantized.eval()
-        eval_model = model_quantized
-        print(f"Loaded student quantized checkpoint: {STUDENT_QUANTIZED_CHECKPOINT}")
-    elif os.path.exists(STUDENT_QAT_CHECKPOINT):
-        model_qat.load_state_dict(
-            torch.load(STUDENT_QAT_CHECKPOINT, map_location=map_location)
-        )
-        model_qat.eval()
-        if USE_QUANTIZED_EVAL:
-            model_quantized = convert(model_qat, inplace=False)
+        try:
+            model_quantized.load_state_dict(
+                torch.load(STUDENT_QUANTIZED_CHECKPOINT, map_location=map_location)
+            )
             model_quantized.eval()
             eval_model = model_quantized
-        else:
-            eval_model = model_qat
-        print(f"Loaded student QAT checkpoint: {STUDENT_QAT_CHECKPOINT}")
-    else:
+            loaded_student = True
+            print(f"Loaded student quantized checkpoint: {STUDENT_QUANTIZED_CHECKPOINT}")
+        except RuntimeError as error:
+            print(
+                "Failed to load quantized checkpoint, will retrain and overwrite: "
+                f"{error}"
+            )
+
+    if not loaded_student and os.path.exists(STUDENT_QAT_CHECKPOINT):
+        try:
+            model_qat.load_state_dict(
+                torch.load(STUDENT_QAT_CHECKPOINT, map_location=map_location)
+            )
+            model_qat.eval()
+            if USE_QUANTIZED_EVAL:
+                model_quantized = convert(model_qat, inplace=False)
+                model_quantized.eval()
+                eval_model = model_quantized
+            else:
+                eval_model = model_qat
+            loaded_student = True
+            print(f"Loaded student QAT checkpoint: {STUDENT_QAT_CHECKPOINT}")
+        except RuntimeError as error:
+            print(
+                "Failed to load QAT checkpoint, will retrain and overwrite: "
+                f"{error}"
+            )
+
+    if not loaded_student:
         student_optimizer = optim.Adam(model_qat.parameters())
         for epoch in range(TRAIN_EPOCHS):
             _, train_acc = train_student_epoch(model_qat, trainloader, student_optimizer, device)
