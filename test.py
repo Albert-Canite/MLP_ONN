@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
-from torch.ao.quantization import convert, prepare_qat
+from torch.ao.quantization import convert, get_default_qat_qconfig, prepare_qat
 
 from args import args
 from distill import train_knowledge_distillation
@@ -25,6 +25,10 @@ PRUNE_AMOUNT = 0.3
 BATCH_SIZE = 64
 VAL_SIZE = 10000
 SEED = 42
+TEACHER_CHECKPOINT = "teacher_resnet18.pth"
+STUDENT_QAT_CHECKPOINT = "student_qat.pth"
+STUDENT_QUANTIZED_CHECKPOINT = "student_quantized.pth"
+USE_QUANTIZED_EVAL = True
 
 
 def set_args_defaults():
@@ -181,18 +185,29 @@ def main():
     )
 
     teacher_model = ResNet18().to(device)
-    teacher_optimizer = optim.SGD(teacher_model.parameters(), lr=0.001, momentum=0.9)
-    for epoch in range(TRAIN_EPOCHS):
-        _, train_acc = train_teacher_epoch(teacher_model, trainloader, teacher_optimizer, device)
-        val_acc = evaluate_teacher(teacher_model, valloader, device)
-        print(
-            f"Teacher Epoch {epoch + 1}/{TRAIN_EPOCHS} - "
-            f"Train Acc: {train_acc:.4f}, Val Acc: {val_acc:.4f}"
-        )
+    if torch.cuda.is_available():
+        map_location = None
+    else:
+        map_location = "cpu"
+    try:
+        teacher_state = torch.load(TEACHER_CHECKPOINT, map_location=map_location)
+        teacher_model.load_state_dict(teacher_state)
+        print(f"Loaded teacher checkpoint: {TEACHER_CHECKPOINT}")
+    except FileNotFoundError:
+        teacher_optimizer = optim.SGD(teacher_model.parameters(), lr=0.001, momentum=0.9)
+        for epoch in range(TRAIN_EPOCHS):
+            _, train_acc = train_teacher_epoch(teacher_model, trainloader, teacher_optimizer, device)
+            val_acc = evaluate_teacher(teacher_model, valloader, device)
+            print(
+                f"Teacher Epoch {epoch + 1}/{TRAIN_EPOCHS} - "
+                f"Train Acc: {train_acc:.4f}, Val Acc: {val_acc:.4f}"
+            )
+        torch.save(teacher_model.state_dict(), TEACHER_CHECKPOINT)
+        print(f"Saved teacher checkpoint: {TEACHER_CHECKPOINT}")
 
     num_i = IMAGE_SIZE * IMAGE_SIZE
     student_model = MLP(num_i, HIDDEN_LAYER_SIZE, 10).to(device)
-    student_model.qconfig = get_default_qat_qconfig_per_tensor()
+    student_model.qconfig = get_default_qat_qconfig("fbgemm")
     model_qat = prepare_qat(student_model)
 
     student_optimizer = optim.Adam(model_qat.parameters())
@@ -223,13 +238,22 @@ def main():
     model_qat = prune.prune_model(model_qat, PRUNE_AMOUNT)
     model_qat.eval()
 
-    model_quantized = convert(model_qat, inplace=False)
-    model_quantized.eval()
+    torch.save(model_qat.state_dict(), STUDENT_QAT_CHECKPOINT)
+    print(f"Saved student QAT checkpoint: {STUDENT_QAT_CHECKPOINT}")
+
+    if USE_QUANTIZED_EVAL:
+        model_quantized = convert(model_qat, inplace=False)
+        model_quantized.eval()
+        eval_model = model_quantized
+        torch.save(model_quantized.state_dict(), STUDENT_QUANTIZED_CHECKPOINT)
+        print(f"Saved student quantized checkpoint: {STUDENT_QUANTIZED_CHECKPOINT}")
+    else:
+        eval_model = model_qat
 
     noise_levels = [i / 10 for i in range(0, 11)]
     noise_accs = []
     for max_noise in noise_levels:
-        acc = evaluate_student_with_noise(model_quantized, testset, device, max_noise, runs=10)
+        acc = evaluate_student_with_noise(eval_model, testset, device, max_noise, runs=10)
         noise_accs.append(acc)
         print(f"Test Noise Max {max_noise:.1f} - Acc: {acc:.4f}")
 
