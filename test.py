@@ -1,3 +1,4 @@
+import os
 import random
 
 import matplotlib.pyplot as plt
@@ -6,7 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
-from torch.ao.quantization import convert, get_default_qat_qconfig, prepare_qat
+from torch.ao.quantization import convert, prepare_qat
 
 from args import args
 from distill import train_knowledge_distillation
@@ -207,48 +208,69 @@ def main():
 
     num_i = IMAGE_SIZE * IMAGE_SIZE
     student_model = MLP(num_i, HIDDEN_LAYER_SIZE, 10).to(device)
-    student_model.qconfig = get_default_qat_qconfig("fbgemm")
+    student_model.qconfig = get_default_qat_qconfig_per_tensor()
     model_qat = prepare_qat(student_model)
 
-    student_optimizer = optim.Adam(model_qat.parameters())
-    for epoch in range(TRAIN_EPOCHS):
-        _, train_acc = train_student_epoch(model_qat, trainloader, student_optimizer, device)
-        val_acc = evaluate_student(model_qat, valloader, device)
-        if epoch > 5:
-            model_qat.apply(torch.ao.quantization.disable_observer)
-        if epoch > 3:
-            model_qat.apply(torch.nn.intrinsic.qat.freeze_bn_stats)
-        print(
-            f"Student Epoch {epoch + 1}/{TRAIN_EPOCHS} - "
-            f"Train Acc: {train_acc:.4f}, Val Acc: {val_acc:.4f}"
-        )
-
-    train_knowledge_distillation(
-        teacher=teacher_model,
-        student=model_qat,
-        train_loader=trainloader,
-        epochs=DISTILL_EPOCHS,
-        learning_rate=0.005,
-        T=2,
-        soft_target_loss_weight=0.25,
-        ce_loss_weight=0.75,
-        device=device,
-    )
-
-    model_qat = prune.prune_model(model_qat, PRUNE_AMOUNT)
-    model_qat.eval()
-
-    torch.save(model_qat.state_dict(), STUDENT_QAT_CHECKPOINT)
-    print(f"Saved student QAT checkpoint: {STUDENT_QAT_CHECKPOINT}")
-
-    if USE_QUANTIZED_EVAL:
+    if USE_QUANTIZED_EVAL and os.path.exists(STUDENT_QUANTIZED_CHECKPOINT):
         model_quantized = convert(model_qat, inplace=False)
+        model_quantized.load_state_dict(
+            torch.load(STUDENT_QUANTIZED_CHECKPOINT, map_location=map_location)
+        )
         model_quantized.eval()
         eval_model = model_quantized
-        torch.save(model_quantized.state_dict(), STUDENT_QUANTIZED_CHECKPOINT)
-        print(f"Saved student quantized checkpoint: {STUDENT_QUANTIZED_CHECKPOINT}")
+        print(f"Loaded student quantized checkpoint: {STUDENT_QUANTIZED_CHECKPOINT}")
+    elif os.path.exists(STUDENT_QAT_CHECKPOINT):
+        model_qat.load_state_dict(
+            torch.load(STUDENT_QAT_CHECKPOINT, map_location=map_location)
+        )
+        model_qat.eval()
+        if USE_QUANTIZED_EVAL:
+            model_quantized = convert(model_qat, inplace=False)
+            model_quantized.eval()
+            eval_model = model_quantized
+        else:
+            eval_model = model_qat
+        print(f"Loaded student QAT checkpoint: {STUDENT_QAT_CHECKPOINT}")
     else:
-        eval_model = model_qat
+        student_optimizer = optim.Adam(model_qat.parameters())
+        for epoch in range(TRAIN_EPOCHS):
+            _, train_acc = train_student_epoch(model_qat, trainloader, student_optimizer, device)
+            val_acc = evaluate_student(model_qat, valloader, device)
+            if epoch > 5:
+                model_qat.apply(torch.ao.quantization.disable_observer)
+            if epoch > 3:
+                model_qat.apply(torch.nn.intrinsic.qat.freeze_bn_stats)
+            print(
+                f"Student Epoch {epoch + 1}/{TRAIN_EPOCHS} - "
+                f"Train Acc: {train_acc:.4f}, Val Acc: {val_acc:.4f}"
+            )
+
+        train_knowledge_distillation(
+            teacher=teacher_model,
+            student=model_qat,
+            train_loader=trainloader,
+            epochs=DISTILL_EPOCHS,
+            learning_rate=0.005,
+            T=2,
+            soft_target_loss_weight=0.25,
+            ce_loss_weight=0.75,
+            device=device,
+        )
+
+        model_qat = prune.prune_model(model_qat, PRUNE_AMOUNT)
+        model_qat.eval()
+
+        torch.save(model_qat.state_dict(), STUDENT_QAT_CHECKPOINT)
+        print(f"Saved student QAT checkpoint: {STUDENT_QAT_CHECKPOINT}")
+
+        if USE_QUANTIZED_EVAL:
+            model_quantized = convert(model_qat, inplace=False)
+            model_quantized.eval()
+            eval_model = model_quantized
+            torch.save(model_quantized.state_dict(), STUDENT_QUANTIZED_CHECKPOINT)
+            print(f"Saved student quantized checkpoint: {STUDENT_QUANTIZED_CHECKPOINT}")
+        else:
+            eval_model = model_qat
 
     noise_levels = [i / 10 for i in range(0, 11)]
     noise_accs = []
