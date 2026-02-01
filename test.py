@@ -30,6 +30,7 @@ TEACHER_CHECKPOINT = "teacher_resnet18.pth"
 STUDENT_QAT_CHECKPOINT = "student_qat.pth"
 STUDENT_QUANTIZED_CHECKPOINT = "student_quantized.pth"
 USE_QUANTIZED_EVAL = True
+CALIBRATION_BATCHES = 10
 
 
 def set_args_defaults():
@@ -143,6 +144,23 @@ def evaluate_student_with_noise(model, dataset, device, max_noise, runs=10):
     return sum(accuracies) / len(accuracies)
 
 
+def build_quantized_model(model_qat, loader, device):
+    model_qat.eval()
+    with torch.no_grad():
+        for batch_index, (inputs, labels) in enumerate(loader):
+            if batch_index >= CALIBRATION_BATCHES:
+                break
+            inputs = torch.flatten(inputs, start_dim=1).to(device)
+            model_qat(inputs)
+    model_quantized = convert(model_qat, inplace=False)
+    model_quantized.eval()
+    with torch.no_grad():
+        inputs, labels = next(iter(loader))
+        inputs = torch.flatten(inputs, start_dim=1).to(device)
+        model_quantized(inputs)
+    return model_quantized
+
+
 def main():
     random.seed(SEED)
     torch.manual_seed(SEED)
@@ -212,31 +230,14 @@ def main():
     model_qat = prepare_qat(student_model)
 
     loaded_student = False
-    if USE_QUANTIZED_EVAL and os.path.exists(STUDENT_QUANTIZED_CHECKPOINT):
-        model_quantized = convert(model_qat, inplace=False)
-        try:
-            model_quantized.load_state_dict(
-                torch.load(STUDENT_QUANTIZED_CHECKPOINT, map_location=map_location)
-            )
-            model_quantized.eval()
-            eval_model = model_quantized
-            loaded_student = True
-            print(f"Loaded student quantized checkpoint: {STUDENT_QUANTIZED_CHECKPOINT}")
-        except RuntimeError as error:
-            print(
-                "Failed to load quantized checkpoint, will retrain and overwrite: "
-                f"{error}"
-            )
-
-    if not loaded_student and os.path.exists(STUDENT_QAT_CHECKPOINT):
+    if os.path.exists(STUDENT_QAT_CHECKPOINT):
         try:
             model_qat.load_state_dict(
                 torch.load(STUDENT_QAT_CHECKPOINT, map_location=map_location)
             )
             model_qat.eval()
             if USE_QUANTIZED_EVAL:
-                model_quantized = convert(model_qat, inplace=False)
-                model_quantized.eval()
+                model_quantized = build_quantized_model(model_qat, trainloader, device)
                 eval_model = model_quantized
             else:
                 eval_model = model_qat
@@ -281,11 +282,19 @@ def main():
         print(f"Saved student QAT checkpoint: {STUDENT_QAT_CHECKPOINT}")
 
         if USE_QUANTIZED_EVAL:
-            model_quantized = convert(model_qat, inplace=False)
-            model_quantized.eval()
-            eval_model = model_quantized
-            torch.save(model_quantized.state_dict(), STUDENT_QUANTIZED_CHECKPOINT)
-            print(f"Saved student quantized checkpoint: {STUDENT_QUANTIZED_CHECKPOINT}")
+            try:
+                model_quantized = build_quantized_model(model_qat, trainloader, device)
+                eval_model = model_quantized
+                torch.save(model_quantized.state_dict(), STUDENT_QUANTIZED_CHECKPOINT)
+                print(
+                    f"Saved student quantized checkpoint: {STUDENT_QUANTIZED_CHECKPOINT}"
+                )
+            except RuntimeError as error:
+                print(
+                    "Quantized conversion failed after retraining. "
+                    f"Falling back to QAT eval: {error}"
+                )
+                eval_model = model_qat
         else:
             eval_model = model_qat
 
