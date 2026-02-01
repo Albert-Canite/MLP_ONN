@@ -34,6 +34,6 @@ class MLP(torch.nn.Module):
         return x
     
 def get_default_qat_qconfig_per_tensor(backend='fbgemm'):
-    activation = default_observer.with_args(reduce_range=False,quant_min=-16,quant_max=15)
-    weight = default_observer.with_args(dtype=torch.qint8, reduce_range=False,quant_min=-16,quant_max=15)
+    activation = default_observer.with_args(reduce_range=False)
+    weight = default_observer.with_args(dtype=torch.qint8, reduce_range=False)
     return QConfig(activation=activation, weight=weight)
