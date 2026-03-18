@@ -17,7 +17,7 @@ import prune
 from resnet import ResNet18
 
 
-TRAIN_NOISE_CENTER = 0.05
+TRAIN_NOISE_CENTER = 0
 TRAIN_NOISE_JITTER = 0.01
 IMAGE_SIZE = 14
 LAYER_NUM = 3
