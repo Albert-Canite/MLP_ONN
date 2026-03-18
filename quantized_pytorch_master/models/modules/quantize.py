@@ -13,6 +13,24 @@ def set_gradient_noise_std(noise_std):
     GRADIENT_NOISE_STD = max(float(noise_std), 0.0)
 
 
+GRADIENT_NOISE_STD = 0.0
+
+
+def set_gradient_noise_std(noise_std):
+    global GRADIENT_NOISE_STD
+    GRADIENT_NOISE_STD = max(float(noise_std), 0.0)
+
+
+def add_gradient_noise(tensor, noise_std=None):
+    effective_noise_std = GRADIENT_NOISE_STD if noise_std is None else max(float(noise_std), 0.0)
+    if effective_noise_std <= 0:
+        return tensor
+    grad_scale = tensor.detach().std(unbiased=False)
+    if torch.isnan(grad_scale) or grad_scale <= 0:
+        return tensor
+    return tensor + torch.randn_like(tensor) * (grad_scale * effective_noise_std)
+
+
 def _mean(p, dim):
     """Computes the mean over all dimensions except dim"""
     if dim is None:
