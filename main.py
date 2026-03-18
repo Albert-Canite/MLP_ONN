@@ -1,3 +1,5 @@
+"""Main entry point for teacher training, student QAT, pruning, and distillation."""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim

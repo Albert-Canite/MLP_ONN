@@ -1,3 +1,5 @@
+"""Training and evaluation helpers for the teacher and student models."""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim

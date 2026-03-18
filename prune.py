@@ -1,3 +1,5 @@
+"""Linear-layer pruning and short fine-tuning step for the student model."""
+
 import torch.nn.utils.prune as prune
 from train import *
 from dataloader import *

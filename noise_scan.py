@@ -1,3 +1,18 @@
+"""Noise robustness scan for the main training path.
+
+This script is separate from `main.py`. It reuses the repository's teacher,
+student, pruning, and QAT components, but it is designed for robustness
+analysis rather than the default train/test flow.
+
+What this script does:
+1. Builds a teacher/student training setup similar to the main path.
+2. Trains the student on MNIST with input noise applied during training.
+3. Optionally converts the trained QAT student to a quantized model for eval.
+4. Sweeps a range of input-noise levels at inference time and records accuracy.
+
+All artifacts produced by this script are written under `Noise_analysis/`.
+"""
+
 import csv
 import os
 import random
@@ -28,12 +43,14 @@ PRUNE_AMOUNT = 0.3
 BATCH_SIZE = 64
 VAL_SIZE = 10000
 SEED = 42
-TEACHER_CHECKPOINT = "teacher_resnet18.pth"
-STUDENT_QAT_CHECKPOINT = "student_qat.pth"
-STUDENT_QUANTIZED_CHECKPOINT = "student_quantized.pth"
+OUTPUT_DIR = "Noise_analysis"
+TEACHER_CHECKPOINT = os.path.join(OUTPUT_DIR, "teacher_resnet18.pth")
+STUDENT_QAT_CHECKPOINT = os.path.join(OUTPUT_DIR, "student_qat.pth")
+STUDENT_QUANTIZED_CHECKPOINT = os.path.join(OUTPUT_DIR, "student_quantized.pth")
 USE_QUANTIZED_EVAL = True
 CALIBRATION_BATCHES = 10
-NOISE_RESULTS_CSV = "noise_inference_results.csv"
+NOISE_RESULTS_CSV = os.path.join(OUTPUT_DIR, "noise_inference_results.csv")
+NOISE_ROBUSTNESS_PNG = os.path.join(OUTPUT_DIR, "noise_robustness.png")
 
 
 def set_args_defaults():
@@ -189,6 +206,7 @@ def main():
     random.seed(SEED)
     torch.manual_seed(SEED)
     set_args_defaults()
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -342,7 +360,8 @@ def main():
     plt.title("Noise Robustness")
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig("noise_robustness.png")
+    plt.savefig(NOISE_ROBUSTNESS_PNG)
+    print(f"Saved noise robustness plot to {NOISE_ROBUSTNESS_PNG}")
 
 
 if __name__ == "__main__":
