@@ -1,6 +1,5 @@
-import torchvision
-import torchvision.transforms as transforms
 import torch
+import torchvision
 from args import *
 
 
