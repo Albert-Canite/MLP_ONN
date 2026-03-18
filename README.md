@@ -42,16 +42,6 @@ python main.py [--argument_name argument_value]
 7. Evaluates the distilled student.
 8. Converts the final student to a quantized model and saves the weights.
 
-## Current Main-Path Behavior
-
-The current codebase is configured so that:
-
-- The student model uses quantization-aware training with an explicit signed 5-bit range:
-  `quant_min=-16`, `quant_max=15`.
-- The training dataloader adds Gaussian noise with `std=link_calibrated_noise` to the input images.
-- The test dataloader remains clean by default.
-- The main path does not use gradient quantization or gradient-noise injection.
-
 ## Main Files
 
 - `main.py`: Main training entry point.
@@ -107,13 +97,6 @@ Example noise scan:
 ```bash
 python noise_scan.py
 ```
-
-## Outputs
-
-Typical outputs include:
-
-- `student_model.pth` from the main pipeline.
-- Checkpoints and robustness artifacts under `Noise_analysis/` from `noise_scan.py`.
 
 ## License
 
