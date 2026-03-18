@@ -11,7 +11,9 @@ from train import *
 from MLP import *
 import prune
 from distill import train_knowledge_distillation
+from quantized_pytorch_master.models.modules.quantize import set_gradient_noise_std
 print("Starting training with args:", args)
+set_gradient_noise_std(args.gradient_noise_std)
 image_size=args.image_size
 
 num_epochs = args.train_epoch

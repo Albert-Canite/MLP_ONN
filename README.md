@@ -30,13 +30,16 @@ The program accepts the following command-line arguments:
 - `hidden_layer_size`: The number of neurons in each hidden layer.
 - `distill_epoch`: The number of epochs for knowledge distillation.
 - `prune_amount`: The pruning ratio, ranging from 0 to 1.
+- `input_noise_std`: Gaussian noise std injected into training inputs after `ToTensor` (default `0.1`).
+- `gradient_noise_std`: Gaussian noise ratio injected during backward gradient propagation (default `0.1`).
+- `gradient_num_bits`: Bit width used for gradient quantization during backward propagation (default `5`).
 
 ## Example
 
 To run the program with specific parameters, you might use a command like the following:
 
 ```bash
-python main.py --image_size 14 --layer_num 4 --train_epoch 20 --hidden_layer_size 10 --distill_epoch 5 --prune_amount 0.5
+python main.py --image_size 14 --layer_num 4 --train_epoch 20 --hidden_layer_size 10 --distill_epoch 5 --prune_amount 0.5 --input_noise_std 0.1 --gradient_noise_std 0.1 --gradient_num_bits 5
 ```
 
 This command sets the input image size to 28x28, uses 3 hidden layers, trains for 50 epochs, has 100 neurons per hidden layer, distills knowledge for 20 epochs, and prunes 50% of the network parameters.
